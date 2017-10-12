@@ -38,8 +38,6 @@ const uniqueSlug = (slug, slugs) => {
   // Mark this slug as used in the environment.
   slugs[slug] = (hasProp.call(slugs, slug) ? slugs[slug] : 0) + 1
 
-  // console.log(slugs, slug)
-
   // First slug, return as is.
   if (slugs[slug] === 1) {
     return slug
@@ -49,25 +47,47 @@ const uniqueSlug = (slug, slugs) => {
   return slug + '-' + slugs[slug]
 }
 
+const uniqueNestedSlug = (slug, slugs, currentLevel) => {
+  // Mark this slug as used in the environment.
+  slugs[currentLevel - 1][slug] = (hasProp.call(slugs[currentLevel - 1], slug) ? slugs[currentLevel - 1][slug] : 0) + 1
+
+  // First slug, return as is.
+  if (slugs[currentLevel - 1][slug] === 1) {
+    return slug
+  }
+
+  // Duplicate slug, add a `-2`, `-3`, etc. to keep ID unique.
+  return slug + '-' + slugs[currentLevel - 1][slug]
+}
+
 const isLevelSelectedNumber = selection => level => level >= selection
 const isLevelSelectedArray = selection => level => selection.includes(level)
 
-const buildSlugString = (slugHistory, modifier, slugString) => {
-  // console.log(slugHistory.length, modifier)
+const buildSlug = (slugHistory) => {
   // console.log(slugHistory)
-  return slugHistory[slugHistory.length - modifier].slug + '-' + slugString
+
+  var results = ''
+  for (let i = 0; i < slugHistory.length; i++) {
+    if (i === 0) {
+      results += slugHistory[i].slug
+    } else {
+      results += '-' + slugHistory[i].slug
+    }
+  }
+
+  return results
 }
 
 const anchor = (md, opts) => {
   opts = Object.assign({}, anchor.defaults, opts)
 
   md.core.ruler.push('anchor', state => {
+    const nestedSlugs = [{}, {}, {}, {}, {}, {}]
     const slugs = {}
     const tokens = state.tokens
     let previousLevel = 0
-    let currentLevel = 1
+    let currentLevel = 0
     let slugHistory = []
-    let appropriateStart = false
 
     const isLevelSelected = Array.isArray(opts.level)
       ? isLevelSelectedArray(opts.level)
@@ -90,42 +110,57 @@ const anchor = (md, opts) => {
         if (slug == null) {
           // console.log(currentLevel, previousLevel)
 
-          if (!appropriateStart && currentLevel === 1 && previousLevel === 0) {
-            appropriateStart = true
-          }
-
-          if (opts.nestSlugs && appropriateStart) {
+          if (opts.nestSlugs) {
             if (currentLevel === 1) {
-              // console.log('is parent')
-              previousLevel = 1
-              slugHistory = [{slug: slugString}]
-            } else if (currentLevel > previousLevel) {
-              // console.log('has parent')
-              previousLevel = currentLevel
-              slugString = buildSlugString(slugHistory, 1, slugString)
-              slugHistory[slugHistory.length] = {slug: slugString}
-            } else if (currentLevel === previousLevel) {
+              // console.log('reset')
+              previousLevel = 0
+            }
+
+            if (currentLevel === previousLevel) {
               // console.log('sibling')
-              slugString = buildSlugString(slugHistory, 2, slugString)
-            } else if (currentLevel < previousLevel) {
-              // console.log('has older sibling')
-              slugHistory.pop()
-              if (slugHistory.length > 1) {
-                slugHistory.pop()
-              }
-              slugString = buildSlugString(slugHistory, 1, slugString)
-              slugHistory[slugHistory.length] = {slug: slugString}
+              slugHistory[slugHistory.length - 1] = {slug: slugString}
+              slug = buildSlug(slugHistory)
+              // console.log(slug)
+            }
+
+            if (previousLevel === 0) {
+              // console.log('reset part 2')
+              previousLevel = currentLevel
+              slugHistory = [{slug: slugString}]
+              slug = buildSlug(slugHistory)
+              // console.log(slug)
+            }
+
+            if (previousLevel > 0 && currentLevel > previousLevel) {
+              // console.log('child')
+              previousLevel = currentLevel
+              slugHistory.push({slug: slugString})
+              slug = buildSlug(slugHistory)
+              // console.log(slug)
+            }
+
+            if (previousLevel > 0 && currentLevel < previousLevel) {
+              // console.log('uncle')
+              previousLevel = currentLevel
+              slugHistory = slugHistory.slice(0, currentLevel - 1)
+              slugHistory.push({slug: slugString})
+              slug = buildSlug(slugHistory)
+              // console.log(slug)
             }
           }
 
           // console.log(slugHistory)
 
-          slug = uniqueSlug(slugString, slugs)
-
           if (opts.nestSlugs) {
-            if (slug !== slugString) {
-              slugHistory[currentLevel] = {slug: slug}
+            let originalSlug = slug
+
+            slug = uniqueNestedSlug(originalSlug, nestedSlugs, currentLevel)
+
+            if (slug !== originalSlug) {
+              slugHistory[slugHistory.length - 1] = {slug: slug}
             }
+          } else {
+            slug = uniqueSlug(slugString, slugs)
           }
 
           // console.log(slug)
